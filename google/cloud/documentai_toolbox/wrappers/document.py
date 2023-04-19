@@ -95,6 +95,8 @@ def _pages_from_shards(shards: List[documentai.Document]) -> List[Page]:
         for shard_page in shard.pages:
             result.append(Page(documentai_page=shard_page, text=text))
 
+    if len(result) > 1 and result[0].documentai_page.page_number:
+        result.sort(key=lambda x: int(x.documentai_page.page_number))
     return result
 
 
@@ -760,3 +762,37 @@ class Document:
             index += 1
 
         return output_filenames
+
+    def to_documentai_document(self) -> documentai.Document:
+        r"""Convert documentai_toolbox.document.Document to a documentai.Document with merged shards.
+
+        Returns:
+            documentai.Document:
+                A merged documentai.Document.
+        """
+        if len(self.shards) == 1:
+            return self.shards[0]
+
+        merged_entities: List[documentai.Document.Entity] = []
+        merged_pages: List[documentai.Document.Page] = []
+
+        for shard in self.shards:
+            # Offset of starting page for the current shard
+            page_offset = min(int(page.page_number) for page in shard.pages) - 1
+            text_offset = int(shard.shard_info.text_offset)
+
+            # Apply page offset to all entities
+            for entity in shard.entities:
+                for i, page_ref in enumerate(entity.page_anchor.page_refs):
+                    new_page_num = int(page_ref.page) + page_offset
+                    entity.page_anchor.page_refs[i].page = str(new_page_num)
+                merged_entities.append(entity)
+
+            
+        merged_document = documentai.Document(
+            entities=merged_entities,
+            pages=merged_entities,
+            mime_type=self.shards[0].mime_type,
+        )
+
+        return merged_document
